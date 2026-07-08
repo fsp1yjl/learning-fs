@@ -1,6 +1,6 @@
 # Compiled binaries
-myfs/mkmyfs
-myfs/myfs
+stage1/mkmyfs
+stage1/myfs
 
 # Disk image
 disk.img
