@@ -33,7 +33,7 @@ struct d_inode {
     uint32_t size;
     uint32_t atime, mtime, ctime;
     uint32_t direct[12]; // 直接块指针
-    uint8_t pad[INODE_SIZE - (12*4 + 16)];
+    uint8_t pad[INODE_SIZE - (12*4 + 20)];
 } __attribute__((packed));
 
 // 目录项，存放于数据块
