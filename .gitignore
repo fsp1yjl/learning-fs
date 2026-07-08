@@ -1,0 +1,36 @@
+# Compiled binaries
+myfs/mkmyfs
+myfs/myfs
+
+# Disk image
+disk.img
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Libraries
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
