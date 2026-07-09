@@ -61,16 +61,17 @@ static int path_to_ino(const char *path, uint32_t *out_ino)
         return -ENOENT;
     const char *name = path + 1;
     struct d_inode root;
-    ssize_t ri = read_inode(img_fd, ROOT_INO, &root);
+    ssize_t ri = read_inode(img_fd, ROOT_INO, &root); // 读取根目录inode信息，放入root变量
     if (ri != INODE_SIZE) return -EIO;
 
-    uint64_t data_off = root.direct[0] * BLOCK_SIZE;
+    uint64_t data_off = root.direct[0] * BLOCK_SIZE;  // 根目录数据块偏移
     char buf[BLOCK_SIZE] = {0};
-    ssize_t pr = pread(img_fd, buf, BLOCK_SIZE, data_off);
+    ssize_t pr = pread(img_fd, buf, BLOCK_SIZE, data_off);  // 读取根目录数据块内容，放入buf变量
     if (pr < 0) return -EIO;
 
     char *p = buf;
     while (p < buf + BLOCK_SIZE) {
+        // 遍历目录项，查找匹配的文件名,如果找到则返回对应的inode号
         struct dirent *ent = (struct dirent *)p;
         if (ent->rec_len == 0) break;
         if (strcmp(ent->name, name) == 0) {
@@ -84,6 +85,7 @@ static int path_to_ino(const char *path, uint32_t *out_ino)
 
 static int fs_getattr(const char *path, struct stat *st, struct fuse_file_info *fi)
 {
+    // 获取文件属性,先找到对应的inode号，再读取inode信息，最后填充stat结构体
     (void)fi;
     uint32_t ino;
     int ret = path_to_ino(path, &ino);
@@ -108,17 +110,20 @@ static int fs_getattr(const char *path, struct stat *st, struct fuse_file_info *
 
 static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags)
 {
+    // step1 : 获取目录的inode号
     (void)offset; (void)fi; (void)flags;
     uint32_t dir_ino;
     int ret = path_to_ino(path, &dir_ino);
     if (ret != 0) return ret;
 
+    // step2: 读取目录的inode信息，检查是否为目录类型
     struct d_inode din;
     ssize_t ri = read_inode(img_fd, dir_ino, &din);
     if (ri != INODE_SIZE) return -EIO;
     if (!S_ISDIR(din.mode))
         return -ENOTDIR;
 
+    // step3: 读取目录数据块，用户遍历目录项
     uint64_t data_off = din.direct[0] * BLOCK_SIZE;
     char block_buf[BLOCK_SIZE] = {0};
     ssize_t pr = pread(img_fd, block_buf, BLOCK_SIZE, data_off);
@@ -126,7 +131,8 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t
 
     char *p = block_buf;
     while (p < block_buf + BLOCK_SIZE) {
-        struct dirent *ent = (struct dirent *)p;
+        // step4: 遍历目录项，获取子文件的dirent结构体，调用filler函数将文件名填充到buf中
+        struct dirent *ent = (struct dirent *)p; //这里依赖于dirent结构体的定义，包含ino、name和rec_len字段
         if (ent->rec_len == 0) break;
         filler(buf, ent->name, NULL, 0, 0);
         p += ent->rec_len;
@@ -134,20 +140,26 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t
     return 0;
 }
 
+// 打开文件，检查文件类型和权限，返回文件inode号作为文件句柄
 static int fs_open(const char *path, struct fuse_file_info *fi)
 {
-    uint32_t ino;
+    uint32_t ino; // ino存放文件对应的inode号
     int ret = path_to_ino(path, &ino);
     if (ret != 0) return ret;
     struct d_inode din;
     ssize_t ri = read_inode(img_fd, ino, &din);
     if (ri != INODE_SIZE) return -EIO;
+    if (!S_ISREG(din.mode))
+        return -EISDIR;
     if ((fi->flags & O_WRONLY) || (fi->flags & O_RDWR))
         return -EROFS;
     fi->fh = ino;
     return 0;
 }
 
+
+// fs_read直接使用fs_open返回的文件句柄（inode号）来读取文件内容。
+//它首先读取对应的inode信息，然后根据偏移量和大小计算需要读取的数据块和偏移量，最后使用pread从磁盘镜像中读取数据到用户缓冲区中。
 static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
     (void)path;
