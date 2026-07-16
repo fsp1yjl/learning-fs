@@ -1,5 +1,6 @@
 # Compiled binaries
 stage*/mkmyfs
+stage*/myfs_debug
 stage*/myfs
 
 # Disk image

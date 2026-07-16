@@ -31,6 +31,19 @@
 static int img_fd;                  /* 磁盘镜像文件描述符 */
 static struct superblock sb_cache;  /* 超级块缓存 */
 
+/*
+ *  日志开关：编译期宏 -DDEBUG 决定。
+ *  • make            → 默认 ./myfs，LOGF 展开为空，零开销、不评估参数
+ *  • make myfs_debug → ./myfs_debug，LOGF 向 stderr 打印各 FUSE 回调入口轨迹
+ *  输出到 stderr（默认无缓冲），不干扰 FUSE 自身行为，便于与 QA.md 的
+ *  回调分析对照验证。
+ */
+#ifdef DEBUG
+  #define LOGF(...) do { fprintf(stderr, "[myfs] " __VA_ARGS__); } while (0)
+#else
+  #define LOGF(...) do {} while (0)
+#endif
+
 /* ================================================================
  *  辅助：将 d_inode 的字段填充到 struct stat
  * ================================================================ */
@@ -57,6 +70,7 @@ static int fs_getattr(const char *path, struct stat *st,
                       struct fuse_file_info *fi)
 {
     (void)fi;
+    LOGF("getattr(%s)\n", path);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -74,6 +88,7 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                       enum fuse_readdir_flags flags)
 {
     (void)offset; (void)fi; (void)flags;
+    LOGF("readdir(%s)\n", path);
     uint32_t dir_ino;
     int ret = path_resolve(img_fd, path, &dir_ino);
     if (ret < 0) return ret;
@@ -121,6 +136,7 @@ static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 /* ---- open: 打开文件（读写均允许） ---- */
 static int fs_open(const char *path, struct fuse_file_info *fi)
 {
+    LOGF("open(%s)\n", path);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -138,6 +154,7 @@ static int fs_read(const char *path, char *buf, size_t size, off_t offset,
                    struct fuse_file_info *fi)
 {
     (void)path;
+    LOGF("read(%s, off=%lld, size=%zu)\n", path, (long long)offset, size);
     uint32_t ino = fi->fh;
     struct d_inode din;
     if (read_inode(img_fd, ino, &din) != INODE_SIZE) return -EIO;
@@ -173,6 +190,7 @@ static int fs_write(const char *path, const char *buf, size_t size,
                     off_t offset, struct fuse_file_info *fi)
 {
     (void)path;
+    LOGF("write(%s, off=%lld, size=%zu)\n", path, (long long)offset, size);
     uint32_t ino = fi->fh;
     struct d_inode din;
     if (read_inode(img_fd, ino, &din) != INODE_SIZE) return -EIO;
@@ -220,6 +238,7 @@ static int fs_write(const char *path, const char *buf, size_t size,
 static int fs_create(const char *path, mode_t mode,
                      struct fuse_file_info *fi)
 {
+    LOGF("create(%s, mode=%o)\n", path, (unsigned)mode);
     uint32_t parent_ino;
     char name[MAX_NAME_LEN + 1];
     int ret = path_parent_resolve(img_fd, path, &parent_ino, name);
@@ -259,6 +278,7 @@ static int fs_create(const char *path, mode_t mode,
 /* ---- mkdir: 创建新目录 ---- */
 static int fs_mkdir(const char *path, mode_t mode)
 {
+    LOGF("mkdir(%s, mode=%o)\n", path, (unsigned)mode);
     uint32_t parent_ino;
     char name[MAX_NAME_LEN + 1];
     int ret = path_parent_resolve(img_fd, path, &parent_ino, name);
@@ -328,6 +348,7 @@ static int fs_mkdir(const char *path, mode_t mode)
 /* ---- unlink: 删除文件 ---- */
 static int fs_unlink(const char *path)
 {
+    LOGF("unlink(%s)\n", path);
     uint32_t parent_ino;
     char name[MAX_NAME_LEN + 1];
     int ret = path_parent_resolve(img_fd, path, &parent_ino, name);
@@ -360,6 +381,7 @@ static int fs_unlink(const char *path)
 /* ---- rmdir: 删除空目录 ---- */
 static int fs_rmdir(const char *path)
 {
+    LOGF("rmdir(%s)\n", path);
     uint32_t parent_ino;
     char name[MAX_NAME_LEN + 1];
     int ret = path_parent_resolve(img_fd, path, &parent_ino, name);
@@ -405,6 +427,7 @@ static int fs_truncate(const char *path, off_t size,
                        struct fuse_file_info *fi)
 {
     (void)fi;
+    LOGF("truncate(%s, size=%lld)\n", path, (long long)size);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -446,6 +469,7 @@ static int fs_rename(const char *from, const char *to,
                      unsigned int flags)
 {
     (void)flags;
+    LOGF("rename(%s -> %s, flags=%u)\n", from, to, flags);
 
     /* 解析源和目标 */
     uint32_t src_parent_ino, dst_parent_ino;
@@ -538,6 +562,7 @@ static int fs_rename(const char *from, const char *to,
 static int fs_statfs(const char *path, struct statvfs *st)
 {
     (void)path;
+    LOGF("statfs(%s)\n", path);
     memset(st, 0, sizeof(*st));
     st->f_bsize   = BLOCK_SIZE;
     st->f_blocks  = sb_cache.total_block - sb_cache.data_start_blk;
@@ -555,6 +580,7 @@ static int fs_utimens(const char *path, const struct timespec tv[2],
                       struct fuse_file_info *fi)
 {
     (void)fi;
+    LOGF("utimens(%s)\n", path);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -573,12 +599,14 @@ static int fs_utimens(const char *path, const struct timespec tv[2],
 static int fs_release(const char *path, struct fuse_file_info *fi)
 {
     (void)path; (void)fi;
+    LOGF("release(%s)\n", path ? path : "?");
     return 0;
 }
 
 /* ---- opendir: 打开目录 ---- */
 static int fs_opendir(const char *path, struct fuse_file_info *fi)
 {
+    LOGF("opendir(%s)\n", path);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -595,6 +623,7 @@ static int fs_opendir(const char *path, struct fuse_file_info *fi)
 static int fs_releasedir(const char *path, struct fuse_file_info *fi)
 {
     (void)path; (void)fi;
+    LOGF("releasedir(%s)\n", path ? path : "?");
     return 0;
 }
 
@@ -603,6 +632,7 @@ static int fs_chmod(const char *path, mode_t mode,
                     struct fuse_file_info *fi)
 {
     (void)fi;
+    LOGF("chmod(%s, mode=%o)\n", path, (unsigned)mode);
     uint32_t ino;
     int ret = path_resolve(img_fd, path, &ino);
     if (ret < 0) return ret;
@@ -622,6 +652,7 @@ static int fs_chown(const char *path, uid_t uid, gid_t gid,
                     struct fuse_file_info *fi)
 {
     (void)path; (void)uid; (void)gid; (void)fi;
+    LOGF("chown(%s, uid=%u, gid=%u)\n", path, (unsigned)uid, (unsigned)gid);
     /* 当前 inode 结构中没有 uid/gid 字段，直接返回成功 */
     return 0;
 }
@@ -678,6 +709,7 @@ int main(int argc, char **argv)
 
     /* 将 FUSE 参数跳过前两个（disk.img 和 mountpoint） */
     struct fuse_args args = FUSE_ARGS_INIT(argc - 1, argv + 1);
+    LOGF("myfs: starting with image=%s\n", argv[1]);
     int ret = fuse_main_real(args.argc, args.argv, &fs_ops,
                              sizeof(fs_ops), NULL);
     fuse_opt_free_args(&args);

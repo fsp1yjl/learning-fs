@@ -88,6 +88,29 @@ df -h mnt/
 fusermount -uz mnt
 ```
 
+## 日志 / 调试
+
+默认 `make` 产出的 `./myfs` 不含任何日志输出。如需观察 FUSE 回调的实际调用轨迹（用于调试，或与 `QA.md` 的回调分析对照），可编译带日志的调试版本：
+
+```bash
+make myfs_debug            # 生成 ./myfs_debug（-DDEBUG 开启日志）
+./myfs_debug disk.img mnt -f -s
+```
+
+挂载后，每个 FUSE 回调入口会向 stderr 打印一行轨迹，形如：
+
+```
+[myfs] myfs: starting with image=disk.img
+[myfs] getattr(/a)
+[myfs] readdir(/a)
+[myfs] create(/a/t, mode=666)
+[myfs] write(/a/t, off=0, size=12)
+```
+
+- 日志开关为**编译期宏 `-DDEBUG`**：未定义时 `LOGF` 展开为空（零开销、不评估参数），调试日志不影响默认构建的运行性能。
+- 输出定向到 stderr（默认无缓冲），与 FUSE 守护进程的 stdout 分离，便于 `2>trace.log` 单独收集。
+- 可与 `QA.md` 中对 `cd /dir1/dir2` 触发回调序列的分析对照验证。
+
 ## 验收测试
 
 ```bash
